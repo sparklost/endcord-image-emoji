@@ -4,10 +4,10 @@ import os
 import sys
 import threading
 
-from endcord import peripherals
+from endcord import peripherals, terminal_utils
 
 EXT_NAME = "Image Emoji"
-EXT_VERSION = "0.1.0"
+EXT_VERSION = "0.2.0"
 EXT_ENDCORD_VERSION = "1.5.0"
 EXT_DESCRIPTION = "An extension that adds drawing custom discord emoji using kitty protocol"
 EXT_SOURCE = "https://github.com/sparklost/endcord-image-emoji"
@@ -18,19 +18,8 @@ START_IMAGE_ID = 4000
 
 def check_kitty():
     """Check if kitty protocol is supported"""
-    if sys.platform == "win32":
-        return False
-    import termios
-    import tty
-    stdin_fd = sys.stdin.fileno()
-    old_term = termios.tcgetattr(stdin_fd)
-    try:
-        tty.setraw(stdin_fd)
-        os.write(stdin_fd, b"\x1b_Gi=1,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\\x1b[c")
-        response = os.read(stdin_fd, 1024)
-        return b"OK" in response
-    finally:
-        termios.tcsetattr(stdin_fd, termios.TCSADRAIN, old_term)
+    response = terminal_utils.query_terminal(b"\x1b_Gi=1,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\\x1b[c")
+    return "OK" in response
 
 
 def kitty_upload_png(path, image_id):
@@ -96,7 +85,7 @@ class Extension:
         self.prev_chat_hw = None
         self.force_draw = False
         self.image_ids_lock = threading.Lock()
-
+        self.post_one_reaction_len = len(self.app.config["format_one_reaction"].split("%reaction")[-1])
         threading.Thread(target=self.worker, daemon=True).start()
 
 
@@ -108,17 +97,17 @@ class Extension:
 
     def on_chat_draw(self):
         """Re-calculate image positions and draw them"""
-        _, chat_x = self.app.tui.win_chat.getbegyx()
-        h = self.app.tui.chat_hw[0]
         if not self.force_draw and self.prev_chat_index == self.app.tui.chat_index and self.prev_chat_hw == self.app.tui.chat_hw:
             return
+        _, chat_x = self.app.tui.win_chat.getbegyx()
+        chat_h = self.app.tui.chat_hw[0]
         with self.app.tui.lock:
             with self.image_ids_lock:
                 for kitty_image_id in self.image_ids.values():
                     kitty_clear_images_by_id(kitty_image_id)
             for rel_y, rel_x, kitty_image_id in self.emoji_pos_cache:
-                abs_y = h - (rel_y - self.app.tui.chat_index - self.app.tui.have_title + 1)
-                if abs_y <= 0 or abs_y > h:
+                abs_y = chat_h - (rel_y - self.app.tui.chat_index - self.app.tui.have_title + 1)
+                if abs_y <= 0 or abs_y > chat_h:
                     continue
                 abs_x = chat_x + rel_x
                 kitty_draw_image_by_id(kitty_image_id, x=abs_x, y=abs_y, w=None, h=1)
@@ -131,7 +120,7 @@ class Extension:
         for i in range(len(self.image_ids.values()) - 1):
             if self.image_ids.values()[i + 1] != self.image_ids.values()[i] + 1:
                 return self.image_ids.values()[i] + 1
-        return START_IMAGE_ID
+        return START_IMAGE_ID + len(self.image_ids)
 
 
     def worker(self):
@@ -157,7 +146,7 @@ class Extension:
                 for emoji in iterable:
                     if line_map[3]:
                         _, rel_x, emoji_id = emoji
-                        rel_x -= 1
+                        rel_x -= 1 + self.post_one_reaction_len
                     else:
                         rel_x, _, emoji_id = emoji
                     if not emoji_id:
@@ -177,16 +166,15 @@ class Extension:
 
             if new_emoji_pos_cache != self.emoji_pos_cache or self.force_draw:
                 self.emoji_pos_cache = new_emoji_pos_cache
-                logger.info(self.emoji_pos_cache)
                 self.force_draw = True
                 self.on_chat_draw()
 
             # delete caches
+            deleted_kitty = []
             with self.image_ids_lock:
                 for emoji_id, kitty_image_id in new_image_ids:
                     self.image_ids[emoji_id] = kitty_image_id
                 to_delete = [k for k in self.image_ids if k not in visible]
-                deleted_kitty = []
                 for emoji_id in to_delete:
                     deleted_kitty.append(self.image_ids.pop(emoji_id))
             for kitty_image_id in deleted_kitty:

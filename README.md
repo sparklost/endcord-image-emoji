@@ -1,6 +1,7 @@
 # endcord-image-emoji
 An extension for [endcord](https://github.com/sparklost/endcord) discord TUI client, that adds drawing custom discord emoji using kitty protocol.  
 Should work on all terminals with kitty image protocol support.  
+If running in tmux, dont forget to set `allow-passthrough`.  
 
 ## Installing
 See [official extensions documentation](https://github.com/sparklost/endcord/blob/main/extensions.md#installing-extensions) for installing instructions.
