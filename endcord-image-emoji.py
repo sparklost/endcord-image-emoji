@@ -7,7 +7,7 @@ import threading
 from endcord import peripherals, terminal_utils
 
 EXT_NAME = "Image Emoji"
-EXT_VERSION = "0.2.0"
+EXT_VERSION = "0.2.1"
 EXT_ENDCORD_VERSION = "1.5.0"
 EXT_DESCRIPTION = "An extension that adds drawing custom discord emoji using kitty protocol"
 EXT_SOURCE = "https://github.com/sparklost/endcord-image-emoji"
