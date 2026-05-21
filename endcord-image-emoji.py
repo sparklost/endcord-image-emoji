@@ -131,7 +131,7 @@ class Extension:
 
     def get_free_id(self):
         """Get first free id"""
-        ids = self.image_ids.values()
+        ids = list(self.image_ids.values())
         for i in range(len(ids) - 1):
             if ids[i + 1] != ids[i] + 1:
                 return ids[i] + 1
