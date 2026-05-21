@@ -83,6 +83,7 @@ class Extension:
         self.emoji_pos_cache = []
         self.prev_chat_index = None
         self.prev_chat_hw = None
+        self.prew_win_hw = self.app.tui.screen_hw
         self.force_draw = False
         self.image_ids_lock = threading.Lock()
         self.post_one_reaction_len = len(self.app.config["format_one_reaction"].split("%reaction")[-1])
@@ -99,6 +100,9 @@ class Extension:
         """Re-calculate image positions and draw them"""
         if not self.force_draw and self.prev_chat_index == self.app.tui.chat_index and self.prev_chat_hw == self.app.tui.chat_hw:
             return
+        if self.prew_win_hw != self.app.tui.screen_hw:
+            self.prew_win_hw = self.app.tui.screen_hw
+            self.reupload_all()
         _, chat_x = self.app.tui.win_chat.getbegyx()
         chat_h = self.app.tui.chat_hw[0]
         with self.app.tui.lock:
@@ -115,12 +119,25 @@ class Extension:
         self.prev_chat_hw = self.app.tui.chat_hw
 
 
+    def reupload_all(self):
+        """Delete all images and trigger reupload"""
+        for image in self.image_ids.values():
+            with self.app.tui.lock:
+                kitty_delete_images_by_id(image)
+        self.image_ids = {}
+        self.emoji_pos_cache = []
+        self.update.set()
+
+
     def get_free_id(self):
         """Get first free id"""
-        for i in range(len(self.image_ids.values()) - 1):
-            if self.image_ids.values()[i + 1] != self.image_ids.values()[i] + 1:
-                return self.image_ids.values()[i] + 1
-        return START_IMAGE_ID + len(self.image_ids)
+        ids = self.image_ids.values()
+        for i in range(len(ids) - 1):
+            if ids[i + 1] != ids[i] + 1:
+                return ids[i] + 1
+        if START_IMAGE_ID not in ids:
+            return START_IMAGE_ID
+        return START_IMAGE_ID + len(ids)
 
 
     def worker(self):
@@ -157,19 +174,21 @@ class Extension:
                     else:
                         image_path = self.app.discord.get_emoji(emoji_id, size=None, img_type="png", cache=os.path.join(peripherals.cache_path, "emoji"))
                         kitty_image_id = self.get_free_id()
-                        kitty_upload_png(image_path, kitty_image_id)
+                        with self.app.tui.lock:
+                            kitty_upload_png(image_path, kitty_image_id)
                         new_image_ids.append((emoji_id, kitty_image_id))
                         self.force_draw = True
 
                     visible.append(emoji_id)
                     new_emoji_pos_cache.append((rel_y, rel_x, kitty_image_id))
 
+            # update cahanged images
             if new_emoji_pos_cache != self.emoji_pos_cache or self.force_draw:
                 self.emoji_pos_cache = new_emoji_pos_cache
                 self.force_draw = True
                 self.on_chat_draw()
 
-            # delete caches
+            # delete unused cache
             deleted_kitty = []
             with self.image_ids_lock:
                 for emoji_id, kitty_image_id in new_image_ids:
@@ -177,7 +196,7 @@ class Extension:
                 to_delete = [k for k in self.image_ids if k not in visible]
                 for emoji_id in to_delete:
                     deleted_kitty.append(self.image_ids.pop(emoji_id))
-            for kitty_image_id in deleted_kitty:
-                if kitty_image_id not in self.image_ids.values():
-                    with self.app.tui.lock:
+            with self.app.tui.lock:
+                for kitty_image_id in deleted_kitty:
+                    if kitty_image_id not in self.image_ids.values():
                         kitty_delete_images_by_id(kitty_image_id)
