@@ -140,6 +140,8 @@ class Extension:
 
     def on_extra_window_draw(self):
         """Draw images on extra window"""
+        if not self.tui.win_extra_window:
+            return
         with self.tui.lock:
             extra_win_y, extra_win_x = self.tui.win_extra_window.getbegyx()
             with self.image_ids_lock:
