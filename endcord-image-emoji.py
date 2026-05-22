@@ -1,6 +1,7 @@
 import base64
 import logging
 import os
+import queue
 import sys
 import threading
 
@@ -14,6 +15,7 @@ EXT_SOURCE = "https://github.com/sparklost/endcord-image-emoji"
 logger = logging.getLogger(__name__)
 
 START_IMAGE_ID = 4000
+START_IMAGE_ASSIST_ID = 4500
 
 
 def check_kitty():
@@ -85,6 +87,7 @@ class Extension:
         self.update = threading.Event()
         self.drawing = threading.Event()
         self.image_ids = {}
+        self.image_assist_ids = {}
         self.emoji_pos_cache = []
         self.emoji_assist_cache = []
         self.prev_chat_index = None
@@ -93,9 +96,11 @@ class Extension:
         self.prev_assist_type = None
         self.force_draw = False
         self.image_ids_lock = threading.Lock()
+        self.image_assist_ids_lock = threading.Lock()
+        self.download_queue = queue.Queue()
         self.post_one_reaction_len = len(self.app.config["format_one_reaction"].split("%reaction")[-1])
+        threading.Thread(target=self.downloader, daemon=True).start()
         threading.Thread(target=self.worker, daemon=True).start()
-
 
     def on_chat_update(self, chat, chat_format, chat_map):   # noqa
         """Get new chat map"""
@@ -123,7 +128,7 @@ class Extension:
             self.prew_win_hw = self.tui.screen_hw
             self.reupload_all()
         with self.tui.lock:
-            _, chat_x = self.tui.win_chat.getbegyx()
+            chat_x = self.tui.win_chat.getbegyx()[1]
             chat_h = self.tui.chat_hw[0]
             with self.image_ids_lock:
                 for kitty_image_id in self.image_ids.values():
@@ -144,8 +149,8 @@ class Extension:
             return
         with self.tui.lock:
             extra_win_y, extra_win_x = self.tui.win_extra_window.getbegyx()
-            with self.image_ids_lock:
-                for kitty_image_id in self.image_ids.values():
+            with self.image_assist_ids_lock:
+                for kitty_image_id in self.image_assist_ids.values():
                     kitty_clear_images_by_id(kitty_image_id)
             for rel_y, kitty_image_id in self.emoji_assist_cache:
                 abs_y = extra_win_y + rel_y + 1
@@ -157,6 +162,8 @@ class Extension:
         """Clear images from extra window when its removed"""
         self.assist_data = []
         self.prev_assist_type = None
+        for image in self.image_assist_ids.values():
+            kitty_delete_images_by_id(image)
 
 
     def on_force_redraw(self):
@@ -166,10 +173,13 @@ class Extension:
 
     def reupload_all(self):
         """Delete all images and trigger reupload"""
-        for image in self.image_ids.values():
-            with self.tui.lock:
+        with self.tui.lock:
+            for image in self.image_ids.values():
+                kitty_delete_images_by_id(image)
+            for image in self.image_assist_ids.values():
                 kitty_delete_images_by_id(image)
         self.image_ids = {}
+        self.image_assist_ids = {}
         self.emoji_pos_cache = []
         self.emoji_assist_cache = []
         self.update.set()
@@ -186,15 +196,26 @@ class Extension:
         return START_IMAGE_ID + len(ids)
 
 
+    def get_free_assist_id(self):
+        """Get first free id"""
+        ids = list(self.image_assist_ids.values())
+        for i in range(len(ids) - 1):
+            if ids[i + 1] != ids[i] + 1:
+                return ids[i] + 1
+        if START_IMAGE_ASSIST_ID not in ids:
+            return START_IMAGE_ASSIST_ID
+        return START_IMAGE_ASSIST_ID + len(ids)
+
+
     def worker(self):
         """Thread that updates emoji cache on disk and in ram and downloads missing emoji"""
         while self.run:
             self.update.wait()
             self.update.clear()
             visible = []
+            visible_assist = []
             new_emoji_pos_cache = []
             new_emoji_assist_cache = []
-            new_image_ids = []
             self.force_draw = False
 
             # emoji in chat
@@ -218,12 +239,10 @@ class Extension:
                     if emoji_id in self.image_ids:
                         kitty_image_id = self.image_ids[emoji_id]
                     else:
-                        image_path = self.app.discord.get_emoji(emoji_id, size=None, img_type="png", cache=os.path.join(peripherals.cache_path, "emoji"))
                         kitty_image_id = self.get_free_id()
-                        with self.tui.lock:
-                            kitty_upload_png(image_path, kitty_image_id)
-                        new_image_ids.append((emoji_id, kitty_image_id))
-                        self.force_draw = True
+                        self.download_queue.put((True, emoji_id, kitty_image_id, rel_y, rel_x))
+                        with self.image_ids_lock:
+                            self.image_ids[emoji_id] = kitty_image_id
                     visible.append(emoji_id)
                     new_emoji_pos_cache.append((rel_y, rel_x, kitty_image_id))
 
@@ -240,17 +259,14 @@ class Extension:
                         continue
 
                     emoji_id = line[1].split(":")[-1][:-1]
-                    logger.info(emoji_id)
-                    if emoji_id in self.image_ids:
-                        kitty_image_id = self.image_ids[emoji_id]
+                    if emoji_id in self.image_assist_ids:
+                        kitty_image_id = self.image_assist_ids[emoji_id]
                     else:
-                        image_path = self.app.discord.get_emoji(emoji_id, size=None, img_type="png", cache=os.path.join(peripherals.cache_path, "emoji"))
-                        kitty_image_id = self.get_free_id()
-                        with self.tui.lock:
-                            kitty_upload_png(image_path, kitty_image_id)
-                        new_image_ids.append((emoji_id, kitty_image_id))
-                        self.force_draw = True
-                    visible.append(emoji_id)
+                        kitty_image_id = self.get_free_assist_id()
+                        self.download_queue.put((False, emoji_id, kitty_image_id, rel_y, 0))
+                        with self.image_assist_ids_lock:
+                            self.image_assist_ids[emoji_id] = kitty_image_id
+                    visible_assist.append(emoji_id)
                     new_emoji_assist_cache.append((rel_y, kitty_image_id))
 
             # update cahanged images
@@ -265,12 +281,49 @@ class Extension:
             # delete unused cache
             deleted_kitty = []
             with self.image_ids_lock:
-                for emoji_id, kitty_image_id in new_image_ids:
-                    self.image_ids[emoji_id] = kitty_image_id
                 to_delete = [k for k in self.image_ids if k not in visible]
                 for emoji_id in to_delete:
                     deleted_kitty.append(self.image_ids.pop(emoji_id))
+            with self.image_assist_ids_lock:
+                to_delete = [k for k in self.image_assist_ids if k not in visible_assist]
+                for emoji_id in to_delete:
+                    deleted_kitty.append(self.image_assist_ids.pop(emoji_id))
             with self.tui.lock:
                 for kitty_image_id in deleted_kitty:
-                    if kitty_image_id not in self.image_ids.values():
-                        kitty_delete_images_by_id(kitty_image_id)
+                    kitty_delete_images_by_id(kitty_image_id)
+
+
+    def downloader(self):
+        """Download emoji and draw it"""
+        while self.run:
+            in_chat, emoji_id, kitty_image_id, rel_y, rel_x = self.download_queue.get()
+
+            if in_chat:
+                image_path = self.app.discord.get_emoji(emoji_id, size=None, img_type="png", cache=os.path.join(peripherals.cache_path, "emoji"))
+                if not image_path:
+                    continue
+                with self.tui.lock:
+                    kitty_upload_png(image_path, kitty_image_id)
+                if emoji_id not in self.image_ids:
+                    continue
+                with self.tui.lock:
+                    chat_x = self.tui.win_chat.getbegyx()[1]
+                    chat_h = self.tui.chat_hw[0]
+                    abs_y = chat_h - (rel_y - self.tui.chat_index - self.tui.have_title + 1)
+                    if abs_y <= 0 or abs_y > chat_h:
+                        continue
+                    abs_x = chat_x + rel_x
+                    kitty_draw_image_by_id(kitty_image_id, x=abs_x, y=abs_y, w=None, h=1)
+
+            else:
+                image_path = self.app.discord.get_emoji(emoji_id, size=None, img_type="png", cache=os.path.join(peripherals.cache_path, "emoji"))
+                if not image_path:
+                    continue
+                with self.tui.lock:
+                    kitty_upload_png(image_path, kitty_image_id)
+                if emoji_id not in self.image_assist_ids:
+                    continue
+                extra_win_y, extra_win_x = self.tui.win_extra_window.getbegyx()
+                abs_y = extra_win_y + rel_y + 1
+                abs_x = extra_win_x + 1
+                kitty_draw_image_by_id(kitty_image_id, x=abs_x, y=abs_y, w=None, h=1)
