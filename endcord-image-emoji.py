@@ -94,6 +94,7 @@ class Extension:
         self.prev_chat_hw = None
         self.prew_win_hw = self.tui.screen_hw
         self.prev_assist_type = None
+        self.prev_extra_index = None
         self.force_draw = False
         self.image_ids_lock = threading.Lock()
         self.image_assist_ids_lock = threading.Lock()
@@ -147,12 +148,20 @@ class Extension:
         """Draw images on extra window"""
         if not self.tui.win_extra_window:
             return
+        if self.tui.extra_index != self.prev_extra_index:
+            self.prev_extra_index = self.tui.extra_index
+            self.update.set()
+            return
         with self.tui.lock:
             extra_win_y, extra_win_x = self.tui.win_extra_window.getbegyx()
             with self.image_assist_ids_lock:
                 for kitty_image_id in self.image_assist_ids.values():
                     kitty_clear_images_by_id(kitty_image_id)
-            for rel_y, kitty_image_id in self.emoji_assist_cache:
+            h = self.tui.win_extra_window.getmaxyx()[0]
+            for y, kitty_image_id in self.emoji_assist_cache:
+                rel_y = y - self.tui.extra_index
+                if rel_y + 1 >= h or rel_y < 0:
+                    continue
                 abs_y = extra_win_y + rel_y + 1
                 abs_x = extra_win_x + 1
                 kitty_draw_image_by_id(kitty_image_id, x=abs_x, y=abs_y, w=None, h=1)
@@ -187,7 +196,7 @@ class Extension:
 
     def get_free_id(self):
         """Get first free id"""
-        ids = list(self.image_ids.values())
+        ids = sorted(list(self.image_ids.values()))
         for i in range(len(ids) - 1):
             if ids[i + 1] != ids[i] + 1:
                 return ids[i] + 1
@@ -198,7 +207,7 @@ class Extension:
 
     def get_free_assist_id(self):
         """Get first free id"""
-        ids = list(self.image_assist_ids.values())
+        ids = sorted(list(self.image_assist_ids.values()))
         for i in range(len(ids) - 1):
             if ids[i + 1] != ids[i] + 1:
                 return ids[i] + 1
@@ -219,6 +228,7 @@ class Extension:
             self.force_draw = False
 
             # emoji in chat
+            chat_w = self.tui.chat_hw[1]
             for rel_y, line_map in enumerate(self.chat_map):
                 if not line_map:
                     continue
@@ -234,7 +244,7 @@ class Extension:
                         rel_x -= 1 + self.post_one_reaction_len
                     else:
                         rel_x, _, emoji_id = emoji
-                    if not emoji_id:
+                    if not emoji_id or rel_x >= chat_w - 1:
                         continue
                     if emoji_id in self.image_ids:
                         kitty_image_id = self.image_ids[emoji_id]
@@ -250,24 +260,21 @@ class Extension:
             if self.tui.win_extra_window:
                 h = self.tui.win_extra_window.getmaxyx()[0]
                 for num, line in enumerate(self.assist_data):
-                    rel_y = max(num - self.tui.extra_index, 0)
+                    rel_y = num - self.tui.extra_index
+                    if rel_y < 0 or not line[1].startswith("<:"):
+                        continue
                     if rel_y + 1 >= h:
                         break
-                    if rel_y < 0:
-                        continue
-                    if not line[1].startswith("<:"):
-                        continue
-
                     emoji_id = line[1].split(":")[-1][:-1]
                     if emoji_id in self.image_assist_ids:
                         kitty_image_id = self.image_assist_ids[emoji_id]
                     else:
                         kitty_image_id = self.get_free_assist_id()
-                        self.download_queue.put((False, emoji_id, kitty_image_id, rel_y, 0))
+                        self.download_queue.put((False, emoji_id, kitty_image_id, num, 0))
                         with self.image_assist_ids_lock:
                             self.image_assist_ids[emoji_id] = kitty_image_id
                     visible_assist.append(emoji_id)
-                    new_emoji_assist_cache.append((rel_y, kitty_image_id))
+                    new_emoji_assist_cache.append((num, kitty_image_id))
 
             # update cahanged images
             if new_emoji_pos_cache != self.emoji_pos_cache or self.force_draw:
@@ -316,6 +323,9 @@ class Extension:
                     kitty_draw_image_by_id(kitty_image_id, x=abs_x, y=abs_y, w=None, h=1)
 
             else:
+                rel_y = rel_y - self.tui.extra_index
+                if rel_y + 1 >= self.tui.win_extra_window.getmaxyx()[0] or rel_y < 0:
+                    continue
                 image_path = self.app.discord.get_emoji(emoji_id, size=None, img_type="png", cache=os.path.join(peripherals.cache_path, "emoji"))
                 if not image_path:
                     continue
