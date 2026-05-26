@@ -244,7 +244,7 @@ class Extension:
                         rel_x -= 1 + self.post_one_reaction_len
                     else:
                         rel_x, _, emoji_id = emoji
-                    if not emoji_id or rel_x >= chat_w - 1:
+                    if not emoji_id or rel_x >= chat_w - 1 or len(emoji_id) < 5:
                         continue
                     if emoji_id in self.image_ids:
                         kitty_image_id = self.image_ids[emoji_id]
