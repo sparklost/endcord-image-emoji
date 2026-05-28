@@ -8,7 +8,7 @@ import threading
 from endcord import peripherals, terminal_utils
 
 EXT_NAME = "Image Emoji"
-EXT_VERSION = "0.2.4"
+EXT_VERSION = "0.2.5"
 EXT_ENDCORD_VERSION = "1.5.0"
 EXT_DESCRIPTION = "An extension that adds drawing custom discord emoji using kitty protocol"
 EXT_SOURCE = "https://github.com/sparklost/endcord-image-emoji"
@@ -75,6 +75,7 @@ class Extension:
             del type(self).on_assist
             del type(self).on_extra_window_draw
             del type(self).on_extra_window_remove
+            del type(self).on_force_redraw
             self.tui.kitty_supported = False
             return
 
@@ -85,14 +86,13 @@ class Extension:
         self.chat_map = []
         self.assist_data = []
         self.update = threading.Event()
-        self.drawing = threading.Event()
         self.image_ids = {}
         self.image_assist_ids = {}
         self.emoji_pos_cache = []
         self.emoji_assist_cache = []
         self.prev_chat_index = None
         self.prev_chat_hw = None
-        self.prew_win_hw = self.tui.screen_hw
+        self.prev_win_hw = self.tui.screen_hw
         self.prev_assist_type = None
         self.prev_extra_index = None
         self.force_draw = False
@@ -125,8 +125,8 @@ class Extension:
         """Re-calculate image positions and draw them"""
         if not self.force_draw and self.prev_chat_index == self.tui.chat_index and self.prev_chat_hw == self.tui.chat_hw:
             return
-        if self.prew_win_hw != self.tui.screen_hw:
-            self.prew_win_hw = self.tui.screen_hw
+        if self.prev_win_hw != self.tui.screen_hw:
+            self.prev_win_hw = self.tui.screen_hw
             self.reupload_all()
         with self.tui.lock:
             chat_x = self.tui.win_chat.getbegyx()[1]
