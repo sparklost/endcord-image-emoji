@@ -8,7 +8,7 @@ import threading
 from endcord import peripherals, terminal_utils
 
 EXT_NAME = "Image Emoji"
-EXT_VERSION = "0.2.6"
+EXT_VERSION = "0.2.7"
 EXT_ENDCORD_VERSION = "1.5.0"
 EXT_DESCRIPTION = "An extension that adds drawing custom discord emoji using kitty protocol"
 EXT_SOURCE = "https://github.com/sparklost/endcord-image-emoji"
@@ -309,7 +309,7 @@ class Extension:
             in_chat, emoji_id, kitty_image_id, rel_y, rel_x = self.download_queue.get()
 
             if in_chat:
-                image_path = self.app.discord.get_emoji(emoji_id, size=None, img_type="png", cache=os.path.join(peripherals.cache_path, "emoji"))
+                image_path = self.app.discord.get_emoji(emoji_id, img_type="png", cache=os.path.join(peripherals.cache_path, "emoji"), keepalive=True)
                 if not image_path:
                     continue
                 with self.tui.lock:
@@ -329,7 +329,7 @@ class Extension:
                 rel_y = rel_y - self.tui.extra_index
                 if rel_y + 1 >= self.tui.win_extra_window.getmaxyx()[0] or rel_y < 0:
                     continue
-                image_path = self.app.discord.get_emoji(emoji_id, size=None, img_type="png", cache=os.path.join(peripherals.cache_path, "emoji"))
+                image_path = self.app.discord.get_emoji(emoji_id, img_type="png", cache=os.path.join(peripherals.cache_path, "emoji"), keepalive=True)
                 if not image_path:
                     continue
                 with self.tui.lock:
