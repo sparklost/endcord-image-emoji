@@ -8,7 +8,7 @@ import threading
 from endcord import peripherals, terminal_utils
 
 EXT_NAME = "Image Emoji"
-EXT_VERSION = "0.2.7"
+EXT_VERSION = "0.2.8"
 EXT_ENDCORD_VERSION = "1.5.0"
 EXT_DESCRIPTION = "An extension that adds drawing custom discord emoji using kitty protocol"
 EXT_SOURCE = "https://github.com/sparklost/endcord-image-emoji"
@@ -126,6 +126,8 @@ class Extension:
         """Re-calculate image positions and draw them"""
         if not self.force_draw and self.prev_chat_index == self.tui.chat_index and self.prev_chat_hw == self.tui.chat_hw:
             return
+        if self.tui.disable_drawing:
+            return
         if self.prev_win_hw != self.tui.screen_hw:
             self.prev_win_hw = self.tui.screen_hw
             self.reupload_all()
@@ -147,7 +149,7 @@ class Extension:
 
     def on_extra_window_draw(self):
         """Draw images on extra window"""
-        if not self.tui.win_extra_window:
+        if not self.tui.win_extra_window or self.tui.disable_drawing:
             return
         if self.tui.extra_index != self.prev_extra_index:
             self.prev_extra_index = self.tui.extra_index
@@ -314,7 +316,7 @@ class Extension:
                     continue
                 with self.tui.lock:
                     kitty_upload_png(image_path, kitty_image_id)
-                if emoji_id not in self.image_ids:
+                if emoji_id not in self.image_ids or self.tui.disable_drawing:
                     continue
                 with self.tui.lock:
                     chat_x = self.tui.win_chat.getbegyx()[1]
@@ -334,7 +336,7 @@ class Extension:
                     continue
                 with self.tui.lock:
                     kitty_upload_png(image_path, kitty_image_id)
-                if emoji_id not in self.image_assist_ids:
+                if emoji_id not in self.image_assist_ids or self.tui.disable_drawing:
                     continue
                 with self.tui.lock:
                     extra_win_y, extra_win_x = self.tui.win_extra_window.getbegyx()
