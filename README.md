@@ -4,7 +4,7 @@ Should work on all terminals with kitty image protocol support.
 If running in tmux, dont forget to set `allow-passthrough`.  
 
 ## Installing
-See [official extensions documentation](https://github.com/sparklost/endcord/blob/main/extensions.md#installing-extensions) for installing instructions.
+See [official extensions documentation](https://github.com/sparklost/endcord/blob/main/docs/extensions.md#installing-extensions) for installing instructions.
 Available options:
 - Git clone into `Extensions` directory located in endcord config directory.
 - Run `endcord -i https://github.com/sparklost/endcord-image-emoji`
