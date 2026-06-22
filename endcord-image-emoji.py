@@ -8,7 +8,7 @@ import threading
 from endcord import peripherals, terminal_utils
 
 EXT_NAME = "Image Emoji"
-EXT_VERSION = "0.2.8"
+EXT_VERSION = "0.2.9"
 EXT_ENDCORD_VERSION = "1.5.0"
 EXT_DESCRIPTION = "An extension that adds drawing custom discord emoji using kitty protocol"
 EXT_SOURCE = "https://github.com/sparklost/endcord-image-emoji"
@@ -137,9 +137,10 @@ class Extension:
             with self.image_ids_lock:
                 for kitty_image_id in self.image_ids.values():
                     kitty_clear_images_by_id(kitty_image_id)
+            subtitle_line = bool(self.tui.win_subtitle_line)
             for rel_y, rel_x, kitty_image_id in self.emoji_pos_cache:
-                abs_y = chat_h - (rel_y - self.tui.chat_index - self.tui.have_title + 1)
-                if abs_y <= 0 or abs_y > chat_h:
+                abs_y = chat_h - (rel_y - self.tui.chat_index - self.tui.have_title - subtitle_line + 1)
+                if abs_y <= subtitle_line or abs_y > chat_h:
                     continue
                 abs_x = chat_x + rel_x
                 kitty_draw_image_by_id(kitty_image_id, x=abs_x, y=abs_y, w=None, h=1)
@@ -321,8 +322,9 @@ class Extension:
                 with self.tui.lock:
                     chat_x = self.tui.win_chat.getbegyx()[1]
                     chat_h = self.tui.chat_hw[0]
-                    abs_y = chat_h - (rel_y - self.tui.chat_index - self.tui.have_title + 1)
-                    if abs_y <= 0 or abs_y > chat_h:
+                    subtitle_line = bool(self.tui.win_subtitle_line)
+                    abs_y = chat_h - (rel_y - self.tui.chat_index - self.tui.have_title - subtitle_line + 1)
+                    if abs_y <= subtitle_line or abs_y > chat_h:
                         continue
                     abs_x = chat_x + rel_x
                     kitty_draw_image_by_id(kitty_image_id, x=abs_x, y=abs_y, w=None, h=1)
