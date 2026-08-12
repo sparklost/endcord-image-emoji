@@ -5,7 +5,12 @@ import queue
 import sys
 import threading
 
-from endcord import peripherals, terminal_utils
+from endcord import peripherals, tui
+
+if tui.uses_gtkcurses:
+    from endcord import gtkcurses as terminal_utils
+else:
+    from endcord import terminal_utils
 
 EXT_NAME = "Image Emoji"
 EXT_VERSION = "0.2.9"
