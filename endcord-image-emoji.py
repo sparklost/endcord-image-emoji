@@ -5,16 +5,11 @@ import queue
 import sys
 import threading
 
-from endcord import peripherals, tui
-
-if tui.uses_gtkcurses:
-    from endcord import gtkcurses as terminal_utils
-else:
-    from endcord import terminal_utils
+from endcord import peripherals, terminal_utils, tui
 
 EXT_NAME = "Image Emoji"
-EXT_VERSION = "0.2.9"
-EXT_ENDCORD_VERSION = "1.5.0"
+EXT_VERSION = "0.2.10"
+EXT_ENDCORD_VERSION = "1.6.0"
 EXT_DESCRIPTION = "An extension that adds drawing custom discord emoji using kitty protocol"
 EXT_SOURCE = "https://github.com/sparklost/endcord-image-emoji"
 logger = logging.getLogger(__name__)
@@ -72,8 +67,8 @@ class Extension:
         self.app = app
         self.tui = app.tui
         kitty_supported = getattr(self.tui, "kitty_supported", None)
-        if kitty_supported is False or (kitty_supported is not True and not check_kitty()):
-            logger.warning("No kitty protocol support detected in this terminal")
+        if tui.uses_gtkcurses or kitty_supported is False or (kitty_supported is not True and not check_kitty()):
+            logger.warning("No kitty image protocol support detected in this terminal")
             self.run = False
             del type(self).on_chat_update
             del type(self).on_chat_draw
