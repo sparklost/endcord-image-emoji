@@ -140,7 +140,7 @@ class Extension:
             subtitle_line = bool(self.tui.win_subtitle_line)
             for rel_y, rel_x, kitty_image_id in self.emoji_pos_cache:
                 abs_y = chat_h - (rel_y - self.tui.chat_index - self.tui.have_title - subtitle_line + 1)
-                if abs_y <= subtitle_line or abs_y > chat_h:
+                if abs_y <= subtitle_line or abs_y > chat_h + self.tui.have_title + subtitle_line - 1:
                     continue
                 abs_x = chat_x + rel_x
                 kitty_draw_image_by_id(kitty_image_id, x=abs_x, y=abs_y, w=None, h=1)
@@ -324,7 +324,7 @@ class Extension:
                     chat_h = self.tui.chat_hw[0]
                     subtitle_line = bool(self.tui.win_subtitle_line)
                     abs_y = chat_h - (rel_y - self.tui.chat_index - self.tui.have_title - subtitle_line + 1)
-                    if abs_y <= subtitle_line or abs_y > chat_h:
+                    if abs_y <= subtitle_line or abs_y > chat_h + self.tui.have_title + subtitle_line - 1:
                         continue
                     abs_x = chat_x + rel_x
                     kitty_draw_image_by_id(kitty_image_id, x=abs_x, y=abs_y, w=None, h=1)
